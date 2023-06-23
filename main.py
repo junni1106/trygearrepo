@@ -1,0 +1,209 @@
+import pandas as pd
+import math
+import matplotlib.pyplot as plt
+import numpy as np
+
+def converttime(df1):
+    df = pd.DataFrame()
+    df = df1.copy()
+    df['received_time']= pd.to_datetime(df['received_time'])
+    df['received_time'] = df['received_time'].astype('datetime64[ns]')
+    df['received_time'] = df['received_time'].astype('datetime64[s]')
+    time = df.received_time
+    df['received_time'] = time
+    return df
+
+#wheelheight
+def find_height(w,ar,r):
+    height = (r*2.54 + 2*(ar/100)*(w/10))/100
+    return height
+
+#distance covered per revolution
+def find_dist_per_rot(height):
+    dist = height * math.pi
+    return dist
+
+#finding min speed given gear and rpm
+def minspd(dist_per_rot,gear_ratios,final_drive_ratio,idle_rpm):
+    min_gear_spd = []
+    for i in range(len(gear_ratios)):
+        spd = (idle_rpm*60*dist_per_rot)/(final_drive_ratio*1000*gear_ratios[i])
+        min_gear_spd.append(spd)
+    return min_gear_spd
+
+def find_rpm_spd(final_drive_ratio,gear_ratio,dist):
+    rpm_spd = (final_drive_ratio*gear_ratio*1000)/(dist*60)#constants are for unit correction
+    return rpm_spd
+
+def assigncluster(ratio,fpsd):
+    clusters = [0]*len(ratio)
+    for i in range(len(ratio)):
+        if fspd[i] >= minimumspeed[0]:
+            for j in range(len(final_rpm_spd)):
+                xp = final_rpm_spd[j]
+                xpp = final_rpm_spd[-1]
+                if ratio[i] < 1.13*xp and ratio[i] > .95*xp:
+                    clusters[i] = j+1
+                elif ratio[i] <= 0.95*xpp:
+                    clusters[i] = len(final_rpm_spd) + 1
+                else:
+                    continue
+        else:
+            clusters[i] = len(final_rpm_spd) + 2
+    return clusters
+
+def find_right_gear(gears_r, fspd_r, frpm_r, minspd_1500_rev, no_of_gears):
+    ideal_gear = [0]*len(gears_r)
+    for i in range(len(gears_r)):
+        gear = gears_r[i]
+        if frpm_r[i] > 2000 and gear < no_of_gears:
+            for j in range(len(minspd_1500_rev)):
+                xd = no_of_gears - j
+                if fspd_r[i] > minspd_1500_rev[j] and ideal_gear[i] < xd:
+                    ideal_gear[i] = xd
+        else:
+            ideal_gear[i] = gears_r[i]
+    return ideal_gear
+
+def get_datapts(gears_r,no_of_gears):
+    datapts = [0]*no_of_gears
+    for i in gears_r:
+        xdp = i-1
+        datapts[xdp] = datapts[xdp] + 1
+    return datapts
+
+def not_ideal_datapts(idealgears, gears_r, no_of_gears):
+    datapts = [0]*no_of_gears
+    for i in range(len(idealgears)):
+        if idealgears[i] != gears_r[i]:
+            xdpp = gears_r[i]-1
+            datapts[xdpp] = datapts[xdpp] + 1
+    return datapts
+
+def get_percentage_not_ideal(not_ideal_datapts, datapts, no_of_gears):
+    perc = [0]*no_of_gears
+    for i in range(len(datapts)):
+        xcd = (not_ideal_datapts[i]/datapts[i])*100
+        perc[i] = xcd
+    return perc
+
+#reading and concatenating datasets
+df = pd.read_csv('baleno14to16mar.csv')
+dfxx = pd.read_csv('baleno14mar.csv')
+dfx = pd.read_csv('Baleno_2.csv')
+df = pd.concat([df, dfxx, dfx], axis=0)
+
+#car specific input
+r = 16
+ar = 55
+w = 195
+final_drive_ratio = 4.294
+gear_ratios = [3.545, 1.904, 1.24, 0.906, 0.696]
+idle_rpm = 700
+no_of_gears = len(gear_ratios)
+
+#for converting time into proper format
+df = converttime(df)
+
+#appending time matched speed and rpm data
+x = df.variable
+y = df.value
+z = df.received_time
+xz = np.dstack((x,z))
+yz = np.dstack((y,z))
+xyz = np.stack(((x,y,z)))
+rows, cols = (1, 2)
+speeddat = [[169]*cols]*rows
+rpmdat = [[169]*cols]*rows
+for i in range(len(x)):
+    temp = xz[0][i][1]
+    for j in range(len(x)):
+        if temp == xz[0][j][1] and j!=i:
+            if xz[0][i][0] == "ENGINE RPM":
+                temp1 = float(yz[0][i][0])
+                temp2 = xz[0][j][1]
+                rpmdat.append([temp1,temp2])
+            elif xz[0][i][0] == "Vehicle speed":
+                temp1 = float(yz[0][i][0])
+                temp2 = xz[0][j][1]
+                speeddat.append([temp1,temp2])
+            else:
+                continue
+speeddat = speeddat[1:]
+rpmdat = rpmdat[1:]
+
+
+#getting speed,time and rpm in arrays
+rows, cols = (1, 3)
+rpmspeedtimedat = [[169]*cols]*rows
+for i in range(len(rpmdat)):
+    for j in range(len(speeddat)):
+        if rpmdat[i][1] == speeddat[j][1]:
+            temp1 = rpmdat[i][0]
+            temp2 = speeddat[j][0]
+            temp3 = speeddat[j][1]
+            rpmspeedtimedat.append([temp1,temp2,temp3])
+rpmspeedtimedat = rpmspeedtimedat[1:]
+finalrpm = []
+finalspeed = []
+finaltime = []
+for i in range(len(rpmspeedtimedat)):
+    pop1 = rpmspeedtimedat[i][0]
+    pop2 = rpmspeedtimedat[i][1]
+    pop3 = rpmspeedtimedat[i][2]
+    if pop1 == 0 or pop2 == 0:
+        continue
+    else:
+        finalrpm.append(pop1)
+        finalspeed.append(pop2)
+        finaltime.append(pop3)
+
+wheightm = find_height(w,ar,r)
+dist_per_rot = find_dist_per_rot(wheightm)
+minimumspeed = minspd(dist_per_rot,gear_ratios,final_drive_ratio,idle_rpm)
+
+df1 = pd.DataFrame()
+df1['RPM'] = finalrpm
+df1['Speed'] = finalspeed
+df1['time'] = finaltime
+df2 = df1.drop_duplicates()
+df2 = df2[df2.RPM >= idle_rpm]
+
+final_rpm_spd = []
+for i in gear_ratios:
+    xoxoxo = find_rpm_spd(final_drive_ratio,i,dist_per_rot)
+    final_rpm_spd.append(xoxoxo)
+
+fspd = df2['Speed']
+frpm = df2['RPM']
+fspd = list(fspd)
+frpm = list(frpm)
+ratio = []
+for i in range(len(fspd)):
+    ratio.append(frpm[i]/fspd[i])
+
+spd_rpm_cluster = assigncluster(ratio,fspd)
+count = pd.Series(spd_rpm_cluster).value_counts()
+clutch_riding_percentage = (count[0]*100)/len(spd_rpm_cluster)
+
+frpm_r = []
+fspd_r = []
+gears_r = []
+for i in range(len(spd_rpm_cluster)):
+    if spd_rpm_cluster[i] > 0 and spd_rpm_cluster[i] < no_of_gears + 1:
+        frpm_r.append(frpm[i])
+        fspd_r.append(fspd[i])
+        gears_r.append(spd_rpm_cluster[i])
+
+#calclating and sorting min speed at given gear given using vehicle specific data
+minimumspeed_1500 = minspd(dist_per_rot,gear_ratios,final_drive_ratio,1500)
+minspd_1500_rev = sorted(minimumspeed_1500, reverse=True)
+
+idealgears = find_right_gear(gears_r, fspd_r, frpm_r, minspd_1500_rev, no_of_gears)
+datapts = get_datapts(gears_r, no_of_gears)
+not_ideal_datapts = not_ideal_datapts(idealgears, gears_r, no_of_gears)
+percentage_not_ideal = get_percentage_not_ideal(not_ideal_datapts, datapts, no_of_gears)
+
+print("Percentage of  time spent with clutch partially or fully engaged\t", clutch_riding_percentage, "%")
+print("Time spent in each gear\n", count)
+print("Percentage of  time spent in the wrong gear as an array\t", percentage_not_ideal)
